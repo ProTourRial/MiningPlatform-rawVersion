@@ -1,0 +1,950 @@
+// MiningPlatform
+// Author: Abia Nugrahanto
+// Copyright (c) 2026 Abia Nugrahanto. All rights reserved.
+
+generator client {
+  provider               = "prisma-client"
+  output                 = "../src/generated/prisma"
+  moduleFormat           = "esm"
+  generatedFileExtension = "ts"
+  importFileExtension    = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  USER
+  OWNER
+}
+
+enum UserStatus {
+  PENDING_VERIFICATION
+  ACTIVE
+  SUSPENDED
+  CLOSED
+}
+
+enum AccountType {
+  INDIVIDUAL
+  COMPANY
+}
+
+enum WorkerStatus {
+  PENDING
+  ONLINE
+  DEGRADED
+  OFFLINE
+  DISABLED
+  UNKNOWN
+}
+
+
+enum WorkerCredentialStatus {
+  ACTIVE
+  REVOKED
+  EXPIRED
+}
+
+enum HardwareType {
+  CPU
+  GPU
+  FPGA
+  ASIC
+  HYBRID
+  OTHER
+  UNKNOWN
+}
+
+enum HardwareDetectionSource {
+  USER_DECLARED
+  STRATUM_USER_AGENT
+  MONITORING_AGENT
+  MINER_API
+  COMBINED
+  UNKNOWN
+}
+
+enum HardwareDetectionConfidence {
+  UNKNOWN
+  LOW
+  MEDIUM
+  HIGH
+  CONFIRMED
+}
+
+enum MinerSessionStatus {
+  CONNECTED
+  SUBSCRIBED
+  AUTHORIZED
+  ACTIVE
+  DEGRADED
+  DISCONNECTED
+}
+
+enum ShareStatus {
+  RECEIVED
+  VALIDATING
+  LOCAL_ACCEPTED
+  LOCAL_REJECTED
+  UPSTREAM_PENDING
+  UPSTREAM_ACCEPTED
+  UPSTREAM_REJECTED
+  UPSTREAM_TIMEOUT
+}
+
+enum ShareRejectionCode {
+  MALFORMED
+  UNAUTHORIZED
+  UNKNOWN_JOB
+  STALE
+  DUPLICATE
+  LOW_DIFFICULTY
+  INVALID_TIME
+  INVALID_VERSION
+  UPSTREAM_REJECTED
+}
+
+enum StratumJobStatus {
+  ACTIVE
+  SUPERSEDED
+  EXPIRED
+  INVALIDATED
+  REPLACED
+  CLOSED
+}
+
+enum UpstreamSessionStatus {
+  CONNECTING
+  SUBSCRIBED
+  AUTHORIZED
+  ACTIVE
+  DEGRADED
+  RECOVERING
+  FAILED
+  DISCONNECTED
+}
+
+enum OutboxEventStatus {
+  PENDING
+  PROCESSING
+  PUBLISHED
+  FAILED
+  DEAD_LETTER
+}
+
+enum IdempotencyRecordStatus {
+  ACQUIRED
+  COMPLETED
+  FAILED
+  RELEASED
+  EXPIRED
+}
+
+enum RewardMethod {
+  FOLLOW_UPSTREAM
+  PPS
+  FPPS
+  PPLNS
+  PROP
+  SOLO
+}
+
+enum RewardStatus {
+  OPEN
+  CALCULATING
+  ALLOCATED
+  RECONCILED
+  CLOSED
+  FAILED
+}
+
+enum LedgerAccountType {
+  ASSET
+  LIABILITY
+  REVENUE
+  EXPENSE
+  EQUITY
+  CLEARING
+}
+
+enum JournalEntryStatus {
+  PENDING
+  POSTED
+  REVERSED
+}
+
+enum PayoutStatus {
+  QUEUED
+  REVIEW
+  APPROVED
+  SIGNING
+  BROADCAST
+  CONFIRMING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum WalletType {
+  HOT
+  COLD
+  FEE
+}
+
+enum WalletTransactionType {
+  RECEIVE
+  SEND
+  FEE
+  INTERNAL_TRANSFER
+}
+
+enum WalletTransactionStatus {
+  DETECTED
+  CONFIRMING
+  CONFIRMED
+  FAILED
+  REPLACED
+}
+
+enum UpstreamStatus {
+  SETUP
+  OPERATIONAL
+  DEGRADED
+  CIRCUIT_OPEN
+  OFFLINE
+  DISABLED
+}
+
+enum NotificationType {
+  SYSTEM
+  SECURITY
+  WORKER
+  REWARD
+  PAYOUT
+}
+
+model User {
+  id                 String          @id @default(cuid())
+  email              String          @unique
+  passwordHash       String
+  displayName        String
+  role               UserRole        @default(USER)
+  status             UserStatus      @default(PENDING_VERIFICATION)
+  accountType        AccountType     @default(INDIVIDUAL)
+  emailVerifiedAt    DateTime?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+  deletedAt          DateTime?
+  security           UserSecurity?
+  companyProfile     CompanyProfile?
+  miningAccounts     MiningAccount[]
+  workers            Worker[]
+  ledgerAccounts     LedgerAccount[]
+  payoutAddresses    PayoutAddress[]
+  payouts            Payout[]
+  notifications      Notification[]
+  auditLogs          AuditLog[]       @relation("AuditActor")
+
+  @@index([status])
+}
+
+model UserSecurity {
+  id                  String    @id @default(cuid())
+  userId              String    @unique
+  totpEnabled         Boolean   @default(false)
+  totpSecretEncrypted String?
+  recoveryCodesHash   String[]
+  failedLoginCount    Int       @default(0)
+  lockedUntil         DateTime?
+  passwordChangedAt   DateTime  @default(now())
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model CompanyProfile {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  legalName      String
+  registrationId String?
+  countryCode    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Asset {
+  id                    String         @id @default(cuid())
+  symbol                String         @unique
+  name                  String
+  algorithm             String
+  decimals              Int
+  enabled               Boolean        @default(false)
+  minimumPayout         Decimal        @db.Decimal(36, 18)
+  requiredConfirmations Int            @default(3)
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+  miningAccounts        MiningAccount[]
+  shares                Share[]
+  rewardPeriods         RewardPeriod[]
+  ledgerAccounts        LedgerAccount[]
+  journalLines          JournalLine[]
+  payoutAddresses       PayoutAddress[]
+  payouts               Payout[]
+  wallets               Wallet[]
+  walletTransactions    WalletTransaction[]
+  upstreamPools         UpstreamPool[]
+  reconciliations       UpstreamReconciliation[]
+  stratumJobs           StratumJob[]
+}
+
+model MiningAccount {
+  id                  String       @id @default(cuid())
+  userId              String
+  assetId             String
+  username            String       @unique
+  rewardMethod        RewardMethod @default(FOLLOW_UPSTREAM)
+  platformFeePercent  Decimal      @db.Decimal(7, 4)
+  enabled             Boolean      @default(true)
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+  deletedAt           DateTime?
+  user                User         @relation(fields: [userId], references: [id], onDelete: Restrict)
+  asset               Asset        @relation(fields: [assetId], references: [id], onDelete: Restrict)
+  workers             Worker[]
+  rewardAllocations   RewardAllocation[]
+
+  @@unique([userId, assetId])
+  @@index([assetId, enabled])
+}
+
+model Worker {
+  id                 String              @id @default(cuid())
+  userId             String
+  miningAccountId    String
+  name               String
+  passwordHash       String
+  status             WorkerStatus        @default(PENDING)
+  lastConnectedAt    DateTime?
+  lastShareAt        DateTime?
+  lastIpHash         String?
+  agentEnabled       Boolean             @default(false)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  deletedAt          DateTime?
+  user               User                @relation(fields: [userId], references: [id], onDelete: Restrict)
+  miningAccount      MiningAccount       @relation(fields: [miningAccountId], references: [id], onDelete: Restrict)
+  shares                Share[]
+  telemetry             WorkerTelemetry[]
+  hashrateSnapshots     HashrateSnapshot[]
+  hashrateBuckets       HashrateBucket[]
+  minerSessions         MinerSession[]
+  difficultyAssignments DifficultyAssignment[]
+  shareFingerprints     ShareFingerprint[]
+  deviceProfile         WorkerDeviceProfile?
+  deviceTelemetry       WorkerDeviceTelemetry[]
+  credentials           WorkerCredential[]
+
+  @@unique([miningAccountId, name])
+  @@index([userId, status])
+}
+
+
+model WorkerCredential {
+  id             String                 @id @default(cuid())
+  workerId       String
+  credentialId   String                 @unique
+  secretHash     String
+  status         WorkerCredentialStatus @default(ACTIVE)
+  failedAttempts Int                    @default(0)
+  lockedUntil    DateTime?
+  expiresAt      DateTime?
+  lastUsedAt     DateTime?
+  lastIpHash     String?
+  rotatedAt      DateTime?
+  revokedAt      DateTime?
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+  worker         Worker                 @relation(fields: [workerId], references: [id], onDelete: Restrict)
+
+  @@index([workerId, status])
+  @@index([status, expiresAt])
+  @@index([lockedUntil])
+}
+
+model WorkerDeviceProfile {
+  id                    String                      @id @default(cuid())
+  workerId              String                      @unique
+  declaredType          HardwareType?
+  detectedType          HardwareType                @default(UNKNOWN)
+  possibleTypes         HardwareType[]
+  detectionSource       HardwareDetectionSource     @default(UNKNOWN)
+  detectionConfidence   HardwareDetectionConfidence @default(UNKNOWN)
+  minerSoftware         String?
+  softwareVersion       String?
+  vendor                String?
+  model                 String?
+  architecture          String?
+  operatingSystem       String?
+  deviceCount           Int                         @default(1)
+  algorithmCapabilities String[]
+  evidence              Json?
+  firstDetectedAt       DateTime                    @default(now())
+  lastDetectedAt        DateTime                    @default(now())
+  createdAt             DateTime                    @default(now())
+  updatedAt             DateTime                    @updatedAt
+  worker                Worker                      @relation(fields: [workerId], references: [id], onDelete: Restrict)
+  telemetry             WorkerDeviceTelemetry[]
+
+  @@index([detectedType, detectionConfidence])
+  @@index([lastDetectedAt])
+}
+
+model WorkerDeviceTelemetry {
+  id                       String              @id @default(cuid())
+  workerId                 String
+  profileId                String
+  deviceKey                String
+  hardwareType             HardwareType
+  recordedAt               DateTime            @default(now())
+  temperatureC             Decimal?            @db.Decimal(8, 3)
+  fanRpm                    Int?
+  powerWatts               Decimal?            @db.Decimal(14, 3)
+  utilizationPercent       Decimal?            @db.Decimal(7, 3)
+  memoryUtilizationPercent Decimal?            @db.Decimal(7, 3)
+  memoryUsedBytes          BigInt?
+  memoryTotalBytes         BigInt?
+  coreClockMhz             Int?
+  memoryClockMhz           Int?
+  hashrate                 Decimal?            @db.Decimal(38, 8)
+  efficiency               Decimal?            @db.Decimal(18, 8)
+  hardwareErrors           Int?
+  raw                      Json?
+  worker                   Worker              @relation(fields: [workerId], references: [id], onDelete: Restrict)
+  profile                  WorkerDeviceProfile @relation(fields: [profileId], references: [id], onDelete: Restrict)
+
+  @@index([workerId, deviceKey, recordedAt])
+  @@index([profileId, recordedAt])
+  @@index([hardwareType, recordedAt])
+}
+
+model WorkerTelemetry {
+  id                String   @id @default(cuid())
+  workerId          String
+  recordedAt        DateTime @default(now())
+  temperatureC      Decimal? @db.Decimal(8, 3)
+  fanRpm            Int?
+  powerWatts        Decimal? @db.Decimal(14, 3)
+  efficiency        Decimal? @db.Decimal(18, 8)
+  hardwareErrors    Int?
+  firmwareVersion   String?
+  raw               Json?
+  worker            Worker   @relation(fields: [workerId], references: [id], onDelete: Restrict)
+
+  @@index([workerId, recordedAt])
+}
+
+model MinerSession {
+  id                   String                  @id @default(cuid())
+  eventId              String                  @unique
+  workerId             String?
+  status               MinerSessionStatus      @default(CONNECTED)
+  remoteIpHash         String
+  userAgent            String?
+  extranonce1          String?
+  extranonce2Size      Int?
+  activeDifficulty     Decimal?                 @db.Decimal(38, 12)
+  connectedAt          DateTime                 @default(now())
+  subscribedAt         DateTime?
+  authorizedAt         DateTime?
+  disconnectedAt       DateTime?
+  lastActivityAt       DateTime                 @default(now())
+  disconnectReason     String?
+  activeUpstreamPoolKey String?
+  upstreamRecoveryStartedAt DateTime?
+  upstreamRecoveredAt  DateTime?
+  upstreamFailoverCount Int                     @default(0)
+  worker               Worker?                  @relation(fields: [workerId], references: [id], onDelete: SetNull)
+  shares               Share[]
+  difficultyAssignments DifficultyAssignment[]
+
+  @@index([workerId, status])
+  @@index([status, lastActivityAt])
+}
+
+model DifficultyAssignment {
+  id          String       @id @default(cuid())
+  sessionId   String
+  workerId    String
+  difficulty  Decimal      @db.Decimal(38, 12)
+  source      String
+  assignedAt  DateTime     @default(now())
+  expiresAt   DateTime?
+  session     MinerSession @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  worker      Worker       @relation(fields: [workerId], references: [id], onDelete: Restrict)
+  shares      Share[]
+
+  @@index([sessionId, assignedAt])
+  @@index([workerId, assignedAt])
+}
+
+model UpstreamSession {
+  id               String                @id @default(cuid())
+  upstreamPoolId   String
+  status           UpstreamSessionStatus @default(CONNECTING)
+  remoteSessionId  String?
+  extranonce1      String?
+  extranonce2Size  Int?
+  connectedAt      DateTime              @default(now())
+  selectedAt       DateTime?
+  authorizedAt     DateTime?
+  recoveryStartedAt DateTime?
+  recoveredAt      DateTime?
+  disconnectedAt  DateTime?
+  lastActivityAt   DateTime              @default(now())
+  reconnectCount   Int                   @default(0)
+  failoverFromPoolId String?
+  failureCode      String?
+  lastError        String?
+  upstreamPool     UpstreamPool          @relation(fields: [upstreamPoolId], references: [id], onDelete: Restrict)
+  jobs             StratumJob[]
+
+  @@index([upstreamPoolId, status])
+  @@index([status, lastActivityAt])
+}
+
+model StratumJob {
+  id                    String           @id @default(cuid())
+  assetId               String
+  upstreamPoolId        String?
+  upstreamSessionId     String?
+  externalJobId         String
+  status                StratumJobStatus @default(ACTIVE)
+  previousBlockHash     String
+  coinbase1             String
+  coinbase2             String
+  merkleBranches        Json
+  version               String
+  networkBits           String
+  networkTime           String
+  cleanJobs             Boolean          @default(false)
+  receivedAt            DateTime          @default(now())
+  expiresAt             DateTime
+  asset                 Asset             @relation(fields: [assetId], references: [id], onDelete: Restrict)
+  upstreamPool          UpstreamPool?      @relation(fields: [upstreamPoolId], references: [id], onDelete: SetNull)
+  upstreamSession       UpstreamSession?   @relation(fields: [upstreamSessionId], references: [id], onDelete: SetNull)
+  shares                Share[]
+  fingerprints          ShareFingerprint[]
+
+  @@unique([upstreamPoolId, externalJobId, receivedAt])
+  @@index([assetId, status, expiresAt])
+  @@index([upstreamSessionId, status])
+}
+
+model ShareFingerprint {
+  id            String      @id @default(cuid())
+  fingerprint   String      @unique
+  workerId      String
+  stratumJobId  String?
+  shareId       String?     @unique
+  expiresAt     DateTime
+  createdAt     DateTime    @default(now())
+  worker        Worker      @relation(fields: [workerId], references: [id], onDelete: Restrict)
+  stratumJob    StratumJob? @relation(fields: [stratumJobId], references: [id], onDelete: Restrict)
+  share         Share?      @relation(fields: [shareId], references: [id], onDelete: SetNull)
+
+  @@index([expiresAt])
+  @@index([workerId, createdAt])
+}
+
+model Share {
+  id                     String                 @id @default(cuid())
+  eventId                String                 @unique
+  fingerprint            String                 @unique
+  fingerprintReservation ShareFingerprint?
+  workerId               String
+  assetId                String
+  sessionId              String
+  stratumJobId           String?
+  difficultyAssignmentId String?
+  status                 ShareStatus            @default(RECEIVED)
+  rejectionCode          ShareRejectionCode?
+  rejectionReason        String?
+  assignedDifficulty     Decimal                @db.Decimal(38, 12)
+  achievedDifficulty     Decimal?               @db.Decimal(38, 12)
+  blockCandidate         Boolean                @default(false)
+  headerHash             String?
+  extranonce2            String
+  networkTime            String
+  nonce                  String
+  versionBits            String?
+  upstreamAccepted       Boolean?
+  upstreamReason         String?
+  upstreamSubmittedAt    DateTime?
+  upstreamRespondedAt    DateTime?
+  submittedAt            DateTime
+  processedAt            DateTime?
+  worker                 Worker                 @relation(fields: [workerId], references: [id], onDelete: Restrict)
+  asset                  Asset                  @relation(fields: [assetId], references: [id], onDelete: Restrict)
+  session                MinerSession           @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  stratumJob             StratumJob?            @relation(fields: [stratumJobId], references: [id], onDelete: SetNull)
+  difficultyAssignment   DifficultyAssignment?  @relation(fields: [difficultyAssignmentId], references: [id], onDelete: SetNull)
+
+  @@index([workerId, submittedAt])
+  @@index([sessionId, submittedAt])
+  @@index([stratumJobId, status])
+  @@index([assetId, status, submittedAt])
+}
+
+model HashrateBucket {
+  id                    String   @id @default(cuid())
+  workerId              String
+  bucketStart           DateTime
+  bucketSeconds         Int      @default(60)
+  acceptedDifficultySum Decimal  @default(0) @db.Decimal(38, 12)
+  acceptedCount         Int      @default(0)
+  rejectedCount         Int      @default(0)
+  invalidCount          Int      @default(0)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  worker                Worker   @relation(fields: [workerId], references: [id], onDelete: Restrict)
+
+  @@unique([workerId, bucketStart, bucketSeconds])
+  @@index([workerId, bucketStart])
+}
+
+model HashrateSnapshot {
+  id              String   @id @default(cuid())
+  workerId        String
+  windowSeconds   Int
+  bucketStart     DateTime
+  hashrate        Decimal  @db.Decimal(38, 8)
+  acceptedShares  Int
+  rejectedShares  Int
+  invalidShares   Int
+  recordedAt      DateTime @default(now())
+  worker          Worker   @relation(fields: [workerId], references: [id], onDelete: Restrict)
+
+  @@unique([workerId, windowSeconds, bucketStart])
+  @@index([workerId, recordedAt])
+  @@index([workerId, windowSeconds, recordedAt])
+}
+
+model RewardPeriod {
+  id                    String             @id @default(cuid())
+  assetId               String
+  upstreamPoolId        String?
+  method                RewardMethod
+  status                RewardStatus       @default(OPEN)
+  periodStart           DateTime
+  periodEnd             DateTime
+  grossReward           Decimal            @default(0) @db.Decimal(36, 18)
+  upstreamFee           Decimal            @default(0) @db.Decimal(36, 18)
+  networkFee            Decimal            @default(0) @db.Decimal(36, 18)
+  platformFee           Decimal            @default(0) @db.Decimal(36, 18)
+  distributableReward   Decimal            @default(0) @db.Decimal(36, 18)
+  reconciliationStatus  String             @default("PENDING")
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+  asset                 Asset              @relation(fields: [assetId], references: [id], onDelete: Restrict)
+  upstreamPool          UpstreamPool?       @relation(fields: [upstreamPoolId], references: [id], onDelete: SetNull)
+  allocations           RewardAllocation[]
+  reconciliation        UpstreamReconciliation?
+
+  @@unique([assetId, periodStart, periodEnd])
+  @@index([status, periodEnd])
+}
+
+model RewardAllocation {
+  id                 String        @id @default(cuid())
+  rewardPeriodId     String
+  miningAccountId    String
+  contribution       Decimal       @db.Decimal(38, 18)
+  grossAmount        Decimal       @db.Decimal(36, 18)
+  platformFeeAmount  Decimal       @db.Decimal(36, 18)
+  netAmount          Decimal       @db.Decimal(36, 18)
+  journalEntryId     String?       @unique
+  createdAt          DateTime      @default(now())
+  rewardPeriod       RewardPeriod  @relation(fields: [rewardPeriodId], references: [id], onDelete: Restrict)
+  miningAccount      MiningAccount @relation(fields: [miningAccountId], references: [id], onDelete: Restrict)
+  journalEntry       JournalEntry? @relation(fields: [journalEntryId], references: [id], onDelete: SetNull)
+
+  @@unique([rewardPeriodId, miningAccountId])
+}
+
+model LedgerAccount {
+  id            String            @id @default(cuid())
+  code          String            @unique
+  name          String
+  type          LedgerAccountType
+  userId        String?
+  assetId       String
+  systemAccount Boolean           @default(false)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  user          User?             @relation(fields: [userId], references: [id], onDelete: Restrict)
+  asset         Asset             @relation(fields: [assetId], references: [id], onDelete: Restrict)
+  journalLines  JournalLine[]
+
+  @@unique([userId, assetId, name])
+  @@index([assetId, type])
+}
+
+model JournalEntry {
+  id                String             @id @default(cuid())
+  idempotencyKey    String             @unique
+  referenceType     String
+  referenceId       String
+  description       String
+  status            JournalEntryStatus @default(PENDING)
+  effectiveAt       DateTime
+  postedAt          DateTime?
+  reversedEntryId   String?            @unique
+  createdAt         DateTime           @default(now())
+  lines             JournalLine[]
+  rewardAllocation  RewardAllocation?
+  payout            Payout?
+  reversedEntry     JournalEntry?      @relation("JournalReversal", fields: [reversedEntryId], references: [id])
+  reversalOf        JournalEntry?      @relation("JournalReversal")
+
+  @@index([referenceType, referenceId])
+  @@index([status, effectiveAt])
+}
+
+model JournalLine {
+  id              String        @id @default(cuid())
+  journalEntryId  String
+  ledgerAccountId String
+  assetId         String
+  debit           Decimal       @default(0) @db.Decimal(36, 18)
+  credit          Decimal       @default(0) @db.Decimal(36, 18)
+  createdAt       DateTime      @default(now())
+  journalEntry    JournalEntry  @relation(fields: [journalEntryId], references: [id], onDelete: Restrict)
+  ledgerAccount   LedgerAccount @relation(fields: [ledgerAccountId], references: [id], onDelete: Restrict)
+  asset           Asset         @relation(fields: [assetId], references: [id], onDelete: Restrict)
+
+  @@index([ledgerAccountId, createdAt])
+  @@index([journalEntryId])
+}
+
+model PayoutAddress {
+  id            String   @id @default(cuid())
+  userId        String
+  assetId       String
+  address       String
+  label         String?
+  verified      Boolean  @default(false)
+  active        Boolean  @default(true)
+  activatedAt   DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  user          User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  asset         Asset    @relation(fields: [assetId], references: [id], onDelete: Restrict)
+  payouts       Payout[]
+
+  @@unique([assetId, address])
+  @@index([userId, assetId, active])
+}
+
+model Payout {
+  id                String       @id @default(cuid())
+  idempotencyKey    String       @unique
+  userId            String
+  assetId           String
+  payoutAddressId   String
+  journalEntryId    String?      @unique
+  amount            Decimal      @db.Decimal(36, 18)
+  networkFee        Decimal      @default(0) @db.Decimal(36, 18)
+  status            PayoutStatus @default(QUEUED)
+  transactionId     String?
+  failureCode       String?
+  failureMessage    String?
+  scheduledAt       DateTime
+  broadcastAt       DateTime?
+  completedAt       DateTime?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  user              User         @relation(fields: [userId], references: [id], onDelete: Restrict)
+  asset             Asset        @relation(fields: [assetId], references: [id], onDelete: Restrict)
+  payoutAddress     PayoutAddress @relation(fields: [payoutAddressId], references: [id], onDelete: Restrict)
+  journalEntry      JournalEntry? @relation(fields: [journalEntryId], references: [id], onDelete: SetNull)
+
+  @@index([status, scheduledAt])
+  @@index([userId, createdAt])
+}
+
+model Wallet {
+  id               String       @id @default(cuid())
+  assetId          String
+  type             WalletType
+  name             String
+  rpcWalletName    String?
+  addressReference String?
+  enabled          Boolean      @default(false)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  asset            Asset        @relation(fields: [assetId], references: [id], onDelete: Restrict)
+  transactions     WalletTransaction[]
+
+  @@unique([assetId, type, name])
+}
+
+model WalletTransaction {
+  id               String                  @id @default(cuid())
+  walletId         String
+  assetId          String
+  transactionId    String
+  outputIndex      Int?
+  type             WalletTransactionType
+  status           WalletTransactionStatus @default(DETECTED)
+  amount           Decimal                 @db.Decimal(36, 18)
+  networkFee       Decimal                 @default(0) @db.Decimal(36, 18)
+  confirmations    Int                     @default(0)
+  blockHeight      BigInt?
+  detectedAt       DateTime                @default(now())
+  confirmedAt      DateTime?
+  raw              Json?
+  wallet           Wallet                  @relation(fields: [walletId], references: [id], onDelete: Restrict)
+  asset            Asset                   @relation(fields: [assetId], references: [id], onDelete: Restrict)
+
+  @@unique([assetId, transactionId, outputIndex])
+  @@index([status, detectedAt])
+}
+
+model UpstreamPool {
+  id                  String         @id @default(cuid())
+  assetId             String
+  poolKey             String
+  name                String
+  host                String
+  port                Int
+  tls                 Boolean        @default(false)
+  rewardMethod        RewardMethod
+  status              UpstreamStatus @default(SETUP)
+  priority            Int            @default(100)
+  weight              Int            @default(100)
+  failureThreshold    Int            @default(3)
+  recoveryTimeoutMs   Int            @default(30000)
+  consecutiveFailures Int            @default(0)
+  successfulConnections Int          @default(0)
+  lastConnectedAt     DateTime?
+  lastFailureAt       DateTime?
+  circuitOpenedUntil  DateTime?
+  lastError           String?
+  capabilities        Json?
+  encryptedCredential String?
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  asset               Asset          @relation(fields: [assetId], references: [id], onDelete: Restrict)
+  rewardPeriods       RewardPeriod[]
+  reconciliations     UpstreamReconciliation[]
+  upstreamSessions    UpstreamSession[]
+  stratumJobs         StratumJob[]
+
+  @@unique([assetId, name])
+  @@unique([assetId, poolKey])
+  @@index([assetId, status, priority, weight])
+  @@index([status, circuitOpenedUntil])
+}
+
+model UpstreamReconciliation {
+  id                     String       @id @default(cuid())
+  assetId                String
+  upstreamPoolId         String
+  rewardPeriodId         String       @unique
+  upstreamGrossReward    Decimal      @db.Decimal(36, 18)
+  upstreamFee            Decimal      @db.Decimal(36, 18)
+  receivedAmount         Decimal      @db.Decimal(36, 18)
+  internalExpectedAmount Decimal      @db.Decimal(36, 18)
+  varianceAmount         Decimal      @db.Decimal(36, 18)
+  status                 String
+  sourceReference        String?
+  reconciledAt           DateTime?
+  createdAt              DateTime     @default(now())
+  updatedAt              DateTime     @updatedAt
+  asset                  Asset        @relation(fields: [assetId], references: [id], onDelete: Restrict)
+  upstreamPool           UpstreamPool @relation(fields: [upstreamPoolId], references: [id], onDelete: Restrict)
+  rewardPeriod           RewardPeriod @relation(fields: [rewardPeriodId], references: [id], onDelete: Restrict)
+
+  @@index([status, createdAt])
+}
+
+model Notification {
+  id          String           @id @default(cuid())
+  userId      String
+  type        NotificationType
+  title       String
+  message     String
+  readAt      DateTime?
+  createdAt   DateTime         @default(now())
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt, createdAt])
+}
+
+model AuditLog {
+  id             String   @id @default(cuid())
+  actorUserId    String?
+  action         String
+  resourceType   String
+  resourceId     String?
+  ipHash         String?
+  userAgentHash  String?
+  metadata       Json?
+  occurredAt     DateTime @default(now())
+  actor          User?    @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([actorUserId, occurredAt])
+  @@index([resourceType, resourceId, occurredAt])
+}
+
+model SystemSetting {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       Json
+  secret      Boolean  @default(false)
+  updatedBy   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model OutboxEvent {
+  id              String            @id @default(cuid())
+  eventId         String            @unique
+  eventName       String
+  eventVersion    Int               @default(1)
+  producer        String
+  aggregateType   String
+  aggregateId     String
+  correlationId   String
+  causationId     String?
+  idempotencyKey  String            @unique
+  payload         Json
+  occurredAt      DateTime
+  status          OutboxEventStatus @default(PENDING)
+  availableAt     DateTime          @default(now())
+  publishedAt     DateTime?
+  attempts        Int               @default(0)
+  lastError       String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  @@index([status, availableAt])
+  @@index([aggregateType, aggregateId, createdAt])
+}
+
+model IdempotencyRecord {
+  id              String                  @id @default(cuid())
+  key             String                  @unique
+  owner           String
+  requestHash     String
+  status          IdempotencyRecordStatus @default(ACQUIRED)
+  resultReference String?
+  expiresAt       DateTime
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  @@index([status, expiresAt])
+}

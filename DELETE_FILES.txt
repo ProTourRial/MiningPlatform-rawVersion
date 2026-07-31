@@ -1,0 +1,3 @@
+# MiningPlatform alpha.5 -> alpha.6 delete manifest
+# Author: Abia Nugrahanto
+# No files require deletion in this release.

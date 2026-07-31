@@ -1,0 +1,12 @@
+# MiningPlatform
+# Author: Abia Nugrahanto
+# Copyright (c) 2026 Abia Nugrahanto. All rights reserved.
+
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: mining-api
+    metrics_path: /api/v1/metrics
+    static_configs:
+      - targets: ["api:4000"]

@@ -1,3 +1,5 @@
+# I Made this Repo Public for now DO NOT CLONE just read my project for reference. TySm from Abia Nugrahanto (AnTo)
+
 # MiningPlatform
 
 MiningPlatform adalah monorepo TypeScript untuk pengelolaan mining pool berbasis upstream gateway, validasi share, monitoring worker, akuntansi reward, double-entry ledger, wallet orchestration, payout, dan transparansi operasional.
